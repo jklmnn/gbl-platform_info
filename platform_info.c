@@ -6,6 +6,35 @@
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
 #include <linux/screen_info.h> 
+#include <linux/string.h>
+
+#define PLATFORM_INFO_SIZE 4095UL
+
+static char platform_info[PLATFORM_INFO_SIZE + 1];
+static size_t pi_size;
+
+static size_t pi_cat(char *string)
+{
+    size_t const len = strlen(string);
+    size_t write = 0;
+
+    if(PLATFORM_INFO_SIZE - pi_size > len){
+        write = len;
+    }else{
+        write = PLATFORM_INFO_SIZE - pi_size;
+    }
+
+    if(write > 0){
+        pi_size += write;
+        strncat(platform_info, string, write);
+    }
+
+    if(write != len){
+        printk("platform_info: warning: platform_info too small, failed to cat %zu bytes\n", len - write);
+    }
+
+    return write;
+}
 
 static ssize_t read_platform_info(struct file *file, char __user *buffer, size_t length, loff_t *offset)
 {
