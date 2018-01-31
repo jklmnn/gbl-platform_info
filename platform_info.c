@@ -52,9 +52,37 @@ static struct miscdevice platform_info_dev = {
     .fops = &platform_info_fops
 };
 
+void generate_boot_fb_info(void)
+{
+    char framebuffer[128];
+    memset(framebuffer, 0, 128);
+
+    if(screen_info.lfb_base){
+        pi_cat("    <boot>\n");
+        sprintf(framebuffer,
+                "        <framebuffer phys=\"%#x\" width=\"%u\" height=\"%u\" bpp=\"%u\" type=\"1\" pitch=\"%u\"/>\n",
+                screen_info.lfb_base, screen_info.lfb_width, screen_info.lfb_height,
+                screen_info.lfb_depth, screen_info.lfb_linelength);
+        pi_cat(framebuffer);
+        pi_cat("    </boot>\n");
+    }
+}
+
+void generate_platform_info(void)
+{
+    memset(platform_info, 0, PLATFORM_INFO_SIZE + 1);
+    pi_size = 0;
+    
+    pi_cat("<platform_info>\n");
+    generate_boot_fb_info();
+    //generate_acpi_info();
+    pi_cat("</platform_info>\n");
+}
+
 static int __init platform_info_init(void)
 {
-    printk("screen_info: %d x %d x %d @ %x\n", screen_info.lfb_width, screen_info.lfb_height, screen_info.lfb_depth, screen_info.lfb_base);
+    generate_platform_info();
+    printk("platform_info:\n%s", platform_info);
     misc_register(&platform_info_dev);
     printk(KERN_INFO "platform_info registered\n");
     return 0;
