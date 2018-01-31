@@ -36,6 +36,18 @@ static size_t pi_cat(char *string)
     return write;
 }
 
+static int open_platform_info(struct inode *inode, struct file *file)
+{
+    printk("%s\n", __func__);
+    
+    if(!capable(CAP_SYS_RAWIO))
+        return -EPERM;
+
+    inode->i_size = strlen(platform_info);
+    
+    return 0;
+}
+
 static ssize_t read_platform_info(struct file *file, char __user *buffer, size_t length, loff_t *offset)
 {
     printk("%s\n", __func__);
@@ -49,6 +61,7 @@ static int mmap_platform_info(struct file *file, struct vm_area_struct *vm)
 }
 
 static const struct file_operations platform_info_fops = {
+    .open = open_platform_info,
     .read = read_platform_info,
     .mmap = mmap_platform_info
 };
