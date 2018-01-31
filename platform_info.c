@@ -42,8 +42,15 @@ static ssize_t read_platform_info(struct file *file, char __user *buffer, size_t
     return 0;
 }
 
+static int mmap_platform_info(struct file *file, struct vm_area_struct *vm)
+{
+    printk("%s\n", __func__);
+    return 0;
+}
+
 static const struct file_operations platform_info_fops = {
-    .read = read_platform_info
+    .read = read_platform_info,
+    .mmap = mmap_platform_info
 };
 
 static struct miscdevice platform_info_dev = {
