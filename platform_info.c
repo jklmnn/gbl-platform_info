@@ -151,8 +151,10 @@ static struct rsdp_t *find_rsdp(void)
     iounmap(ebda);
     ebda = (char*)ioremap_cache(ebda_phys, ebda_size);
 
-    rsdp = locate_rsdp(ebda, ebda_size);
-    iounmap(ebda);
+    if(ebda){
+        rsdp = locate_rsdp(ebda, ebda_size);
+        iounmap(ebda);
+    }
 
     if(!rsdp){
         rom = (char*)ioremap(0xe0000, 0x20000);
