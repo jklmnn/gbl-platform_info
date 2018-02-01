@@ -7,10 +7,12 @@
 #include <linux/miscdevice.h>
 #include <linux/screen_info.h> 
 #include <linux/string.h>
+#include <linux/mm.h>
+#include <linux/slab.h>
 
 #define PLATFORM_INFO_SIZE 4095UL
 
-static char platform_info[PLATFORM_INFO_SIZE + 1];
+static char *platform_info;
 static size_t pi_size;
 
 static size_t pi_cat(char *string)
@@ -54,9 +56,21 @@ static ssize_t read_platform_info(struct file *file, char __user *buffer, size_t
     return 0;
 }
 
-static int mmap_platform_info(struct file *file, struct vm_area_struct *vm)
+static int mmap_platform_info(struct file *file, struct vm_area_struct *vma)
 {
+    unsigned long page;
+    size_t size = vma->vm_end - vma->vm_start;
     printk("%s\n", __func__);
+
+    printk("%lu <-> %lu\n", size, PLATFORM_INFO_SIZE + 1);
+    if(size > PLATFORM_INFO_SIZE + 1){
+        return -EINVAL;
+    }
+
+    page = virt_to_phys((void*)platform_info) >> PAGE_SHIFT;
+    if(remap_pfn_range(vma, vma->vm_start, page, size, vma->vm_page_prot))
+        return -EAGAIN;
+
     return 0;
 }
 
@@ -101,6 +115,7 @@ void generate_platform_info(void)
 
 static int __init platform_info_init(void)
 {
+    platform_info = (char*)kmalloc(PLATFORM_INFO_SIZE + 1, GFP_KERNEL);
     generate_platform_info();
     printk("platform_info:\n%s", platform_info);
     misc_register(&platform_info_dev);
@@ -111,6 +126,7 @@ static int __init platform_info_init(void)
 static void __exit platform_info_exit(void)
 {
     misc_deregister(&platform_info_dev);
+    kfree(platform_info);
     printk(KERN_INFO "platform_info unregistered\n");
 }
 
