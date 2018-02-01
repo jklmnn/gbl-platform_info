@@ -12,6 +12,18 @@
 
 #define PLATFORM_INFO_SIZE 4095UL
 
+struct rsdp_t {
+    char signature[8];
+    uint8_t checksum;
+    char oemid[6];
+    uint8_t revision;
+    uint32_t rsdt;
+    uint32_t length;
+    uint64_t xsdt;
+    uint8_t extended_checksum;
+    uint8_t reserved[3];
+} __attribute__((packed));
+
 static char *platform_info;
 static size_t pi_size;
 
@@ -86,7 +98,7 @@ static struct miscdevice platform_info_dev = {
     .fops = &platform_info_fops
 };
 
-void generate_boot_fb_info(void)
+static void generate_boot_fb_info(void)
 {
     char framebuffer[128];
     memset(framebuffer, 0, 128);
@@ -102,14 +114,87 @@ void generate_boot_fb_info(void)
     }
 }
 
-void generate_platform_info(void)
+static struct rsdp_t *locate_rsdp(char *rom, size_t rom_size)
+{
+    struct rsdp_t *rsdp;
+    size_t i;
+
+    for(i = 0; i < rom_size - 8; i++){
+        rsdp = 0;
+        if(        rom[i]     == 'R'
+                && rom[i + 1] == 'S'
+                && rom[i + 2] == 'D'
+                && rom[i + 3] == ' '
+                && rom[i + 4] == 'P'
+                && rom[i + 5] == 'T'
+                && rom[i + 6] == 'R'
+                && rom[i + 7] == ' '){
+            rsdp = (struct rsdp_t*)(&rom[i]);
+            break;
+        }
+    }
+    return rsdp;
+}
+
+static struct rsdp_t *find_rsdp(void)
+{
+    uint16_t *bda, ebda_size;
+    uintptr_t ebda_phys;
+    char *rom, *ebda;
+    struct rsdp_t *rsdp = 0;
+
+    bda = (uint16_t*)ioremap_cache(0x400, 0x0f);
+    ebda_phys = *(bda + 0x07) << 4;
+    iounmap(bda);
+    ebda = (char*)ioremap_cache(ebda_phys, 2);
+    ebda_size = *(uint16_t*)ebda * 1024;
+    iounmap(ebda);
+    ebda = (char*)ioremap_cache(ebda_phys, ebda_size);
+
+    rsdp = locate_rsdp(ebda, ebda_size);
+    iounmap(ebda);
+
+    if(!rsdp){
+        rom = (char*)ioremap(0xe0000, 0x20000);
+        rsdp = locate_rsdp(rom, 0x20000);
+        iounmap(rom);
+    }
+
+    return rsdp;
+}
+
+static void generate_acpi_info(void)
+{
+    char acpi_buffer[128];
+    const char *id = "RSD PTR ";
+    char oem[7];
+    struct rsdp_t *rsdp = find_rsdp();
+
+    memset(acpi_buffer, 0, 128);
+    
+    if(!strncmp(rsdp->signature, id, 8)){
+        strncpy(oem, rsdp->oemid, 6);
+        oem[6] = '\0';
+        printk("rsdp found of oem: %s\n", oem);
+
+        sprintf(acpi_buffer,
+                "    <acpi revision=\"%u\" rsdt=\"%#x\" xsdt=\"%#llx\"/>\n",
+                rsdp->revision,
+                rsdp->rsdt,
+                rsdp->xsdt);
+        pi_cat(acpi_buffer);
+    }
+
+}
+
+static void generate_platform_info(void)
 {
     memset(platform_info, 0, PLATFORM_INFO_SIZE + 1);
     pi_size = 0;
     
     pi_cat("<platform_info>\n");
     generate_boot_fb_info();
-    //generate_acpi_info();
+    generate_acpi_info();
     pi_cat("</platform_info>\n");
 }
 
@@ -135,6 +220,6 @@ module_init(platform_info_init);
 module_exit(platform_info_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Johannes Kliemann <jk@jkliemann.de");
+MODULE_AUTHOR("Johannes Kliemann <jk@jkliemann.de>");
 MODULE_DESCRIPTION("Set up platform_info rom as device for Genode base-linux");
 
