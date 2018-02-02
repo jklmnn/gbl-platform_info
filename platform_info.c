@@ -185,6 +185,7 @@ static unsigned long find_rsdp(void)
 static void generate_acpi_info(void)
 {
     char acpi_buffer[128];
+    char xsdt_buffer[32];
     const char *id = "RSD PTR ";
     char oem[7];
     unsigned long rsdp_phys = find_rsdp();
@@ -195,6 +196,7 @@ static void generate_acpi_info(void)
     }
 
     memset(acpi_buffer, 0, 128);
+    memset(xsdt_buffer, 0, 32);
     
     if(rsdp && !strncmp(rsdp->signature, id, 8)){
         strncpy(oem, rsdp->oemid, 6);
@@ -202,11 +204,16 @@ static void generate_acpi_info(void)
         printk("rsdp found of oem: %s\n", oem);
 
         sprintf(acpi_buffer,
-                "    <acpi revision=\"%u\" rsdt=\"%#x\" xsdt=\"%#llx\"/>\n",
+                "    <acpi revision=\"%u\" rsdt=\"%#x\" ",
                 rsdp->revision,
-                rsdp->rsdt,
-                rsdp->xsdt);
+                rsdp->rsdt);
+        if(rsdp->xsdt){
+            sprintf(xsdt_buffer, "xsdt=\"%#llx\"/>\n", rsdp->xsdt);
+        }else{
+            sprintf(xsdt_buffer, "/>\n");
+        }
         pi_cat(acpi_buffer);
+        pi_cat(xsdt_buffer);
     }
 
     iounmap(rsdp);
