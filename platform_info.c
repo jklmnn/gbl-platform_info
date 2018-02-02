@@ -9,6 +9,7 @@
 #include <linux/string.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
+#include <linux/efi.h>
 
 #define PLATFORM_INFO_SIZE 4095UL
 
@@ -160,6 +161,17 @@ static struct rsdp_t *find_rsdp(void)
         rom = (char*)ioremap(0xe0000, 0x20000);
         rsdp = locate_rsdp(rom, 0x20000);
         iounmap(rom);
+    }
+
+    if(!rsdp){
+        if(efi_enabled(EFI_CONFIG_TABLES)){
+            if(efi.acpi20 != EFI_INVALID_TABLE_ADDR){
+                rsdp = (struct rsdp_t *)efi.acpi20;
+            }
+            if(!rsdp && efi.acpi != EFI_INVALID_TABLE_ADDR){
+                rsdp = (struct rsdp_t *)efi.acpi;
+            }
+        }
     }
 
     return rsdp;
