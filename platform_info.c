@@ -115,9 +115,10 @@ static void generate_boot_fb_info(void)
     }
 }
 
-static struct rsdp_t *locate_rsdp(char *rom, size_t rom_size)
+static unsigned long locate_rsdp(char *rom, size_t rom_size)
 {
-    struct rsdp_t *rsdp;
+    void *rsdp;
+    unsigned long rsdp_phys = 0;
     size_t i;
 
     for(i = 0; i < rom_size - 8; i++){
@@ -130,19 +131,23 @@ static struct rsdp_t *locate_rsdp(char *rom, size_t rom_size)
                 && rom[i + 5] == 'T'
                 && rom[i + 6] == 'R'
                 && rom[i + 7] == ' '){
-            rsdp = (struct rsdp_t*)(&rom[i]);
+            rsdp = (void*)(&rom[i]);
             break;
         }
     }
-    return rsdp;
+    if(rsdp){
+        rsdp_phys =  virt_to_phys(rsdp);
+    }
+
+    return rsdp_phys;
 }
 
-static struct rsdp_t *find_rsdp(void)
+static unsigned long find_rsdp(void)
 {
     uint16_t *bda, ebda_size;
     uintptr_t ebda_phys;
     char *rom, *ebda;
-    struct rsdp_t *rsdp = 0;
+    unsigned long rsdp_phys = 0;
 
     bda = (uint16_t*)ioremap_cache(0x400, 0x0f);
     ebda_phys = *(bda + 0x07) << 4;
@@ -153,28 +158,28 @@ static struct rsdp_t *find_rsdp(void)
     ebda = (char*)ioremap_cache(ebda_phys, ebda_size);
 
     if(ebda){
-        rsdp = locate_rsdp(ebda, ebda_size);
+        rsdp_phys = locate_rsdp(ebda, ebda_size);
         iounmap(ebda);
     }
 
-    if(!rsdp){
+    if(!rsdp_phys){
         rom = (char*)ioremap(0xe0000, 0x20000);
-        rsdp = locate_rsdp(rom, 0x20000);
+        rsdp_phys = locate_rsdp(rom, 0x20000);
         iounmap(rom);
     }
 
-    if(!rsdp){
+    if(!rsdp_phys){
         if(efi_enabled(EFI_CONFIG_TABLES)){
             if(efi.acpi20 != EFI_INVALID_TABLE_ADDR){
-                rsdp = (struct rsdp_t *)efi.acpi20;
+                rsdp_phys = efi.acpi20;
             }
-            if(!rsdp && efi.acpi != EFI_INVALID_TABLE_ADDR){
-                rsdp = (struct rsdp_t *)efi.acpi;
+            if(!rsdp_phys && efi.acpi != EFI_INVALID_TABLE_ADDR){
+                rsdp_phys = efi.acpi;
             }
         }
     }
-
-    return rsdp;
+    
+    return rsdp_phys;
 }
 
 static void generate_acpi_info(void)
@@ -182,11 +187,16 @@ static void generate_acpi_info(void)
     char acpi_buffer[128];
     const char *id = "RSD PTR ";
     char oem[7];
-    struct rsdp_t *rsdp = find_rsdp();
+    unsigned long rsdp_phys = find_rsdp();
+    struct rsdp_t *rsdp = 0;
+    
+    if(rsdp_phys){
+        rsdp = (struct rsdp_t *)ioremap_cache(rsdp_phys, sizeof(struct rsdp_t));
+    }
 
     memset(acpi_buffer, 0, 128);
     
-    if(!strncmp(rsdp->signature, id, 8)){
+    if(rsdp && !strncmp(rsdp->signature, id, 8)){
         strncpy(oem, rsdp->oemid, 6);
         oem[6] = '\0';
         printk("rsdp found of oem: %s\n", oem);
@@ -199,6 +209,7 @@ static void generate_acpi_info(void)
         pi_cat(acpi_buffer);
     }
 
+    iounmap(rsdp);
 }
 
 static void generate_platform_info(void)
@@ -207,8 +218,8 @@ static void generate_platform_info(void)
     pi_size = 0;
     
     pi_cat("<platform_info>\n");
-    generate_boot_fb_info();
     generate_acpi_info();
+    generate_boot_fb_info();
     pi_cat("</platform_info>\n");
 }
 
